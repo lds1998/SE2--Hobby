@@ -3,6 +3,9 @@
 SE2 Image to schematics to help using regular images or sketchs to make a kinda of schematic to manual build in SE2.
 Suports English and Portuguese, dark and light mode.
 
+The usage is very simple, all you need it a top view image or sketch and you need a size (Z) in meters the program will try mantining the racio between Z and Y but you can optionaly add the (Y) in meters.
+As long there is a clear difference between the object and the background the program will work. (see the test file)
+
 Basic code that was refined using AI (Chatgpt o3-mini-high); 
 
 Just a hobby :P
@@ -13,7 +16,7 @@ Just a hobby :P
     Python 3 (3.13.2) 
     Tkinter Pillow (pip install pillow) 
     NumPy (pip install numpy)
-    
+    Top down view image or sketch to be converted and size length in meters (Z) and optional width (Y)   
 ## Screenshots
 
 ![App Screenshot](https://github.com/lds1998/SE2--Hobby/blob/main/Screenshots/Main.png?raw=true)
@@ -21,5 +24,6 @@ Just a hobby :P
 
 ## Uso/Examples
 
+![Input](https://github.com/lds1998/SE2--Hobby/blob/main/Screenshots/test.jpg?raw=true)
 ![Image to schematic convertion](https://github.com/lds1998/SE2--Hobby/blob/main/Screenshots/Example01.png?raw=true)
 ![Output](https://github.com/lds1998/SE2--Hobby/blob/main/Screenshots/Output.png?raw=true)
