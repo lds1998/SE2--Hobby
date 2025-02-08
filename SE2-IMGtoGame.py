@@ -27,7 +27,15 @@ LANG_STRINGS = {
         "count": "Quantidade",
         "theme": "Tema",
         "light": "Light",
-        "dark": "Dark"
+        "dark": "Dark",
+        "exclude_blocks": "Incluir blocos:",
+        "include_25": "25 cm",
+        "include_50": "50 cm",
+        "include_2_5": "2.5 m",
+        "thickness_3d": "Considerar espessura 3D",
+        "edge_pref": "Preferência para borda:",
+        "interior_pref": "Preferência para interior:",
+        "use_pref": "Utilizar preferências de borda/interior"
     },
     "en": {
         "title": "Pixel Art Scheme Generator for Space Engineers 2",
@@ -51,7 +59,15 @@ LANG_STRINGS = {
         "count": "Count",
         "theme": "Theme",
         "light": "Light",
-        "dark": "Dark"
+        "dark": "Dark",
+        "exclude_blocks": "Include blocks:",
+        "include_25": "25 cm",
+        "include_50": "50 cm",
+        "include_2_5": "2.5 m",
+        "thickness_3d": "Consider 3D thickness",
+        "edge_pref": "Edge preference:",
+        "interior_pref": "Interior preference:",
+        "use_pref": "Use edge/interior preferences"
     }
 }
 
@@ -67,7 +83,6 @@ def setup_styles(mode="light"):
     style.configure("Treeview", font=default_font, rowheight=25)
     style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"))
     style.configure("TFrame", background="#f0f0f0")
-    
     if mode == "dark":
         dark_bg = "#121212"
         dark_fg = "#e0e0e0"
@@ -92,14 +107,48 @@ def setup_styles(mode="light"):
         style.configure("TFrame", background=light_bg)
 
 # ===================== Funções de Processamento =====================
-
 def compute_shape_mask(image, shape_thresh=250):
+    """Converte a imagem para escala de cinza e retorna uma máscara booleana."""
     gray = image.convert("L")
     arr = np.array(gray)
     mask = arr < shape_thresh
     return mask
 
-def generate_blocks_greedy(image_pil, scale, threshold=30.0, debug=False):
+def generate_blocks_with_allowed(image_pil, scale, allowed_types, threshold=30.0, debug=False):
+    """
+    Gera blocos usando somente os tipos permitidos (allowed_types).
+    Cada tipo é mapeado para um tamanho: "25cm" → 1 célula, "50cm" → 2 células, "2.5m" → 10 células.
+    Tenta mesclar células para os tipos permitidos (maior primeiro).
+    Preenche as células restantes com o tipo fallback, SE HOUVER ALGO PERMITIDO.
+    Se allowed_types estiver vazio, retorna uma lista vazia.
+    Retorna: blocks, small_px, new_width, new_height, num_rows, num_cols, inside.
+    """
+    size_mapping = {"25cm": 1, "50cm": 2, "2.5m": 10}
+    if not allowed_types:
+        if debug:
+            print("Nenhum tipo de bloco permitido. Retornando lista vazia.")
+        # Retorna a matriz 'inside' mesmo que não haja blocos
+        width, height = image_pil.size
+        small_px = int(round(0.25 / scale))
+        if small_px <= 0:
+            small_px = 1
+        num_cols = width // small_px
+        num_rows = height // small_px
+        new_width = num_cols * small_px
+        new_height = num_rows * small_px
+        image_resized = image_pil.resize((new_width, new_height))
+        mask = compute_shape_mask(image_resized, shape_thresh=250)
+        inside = np.zeros((num_rows, num_cols), dtype=bool)
+        for r in range(num_rows):
+            for c in range(num_cols):
+                cell_mask = mask[r*small_px:(r+1)*small_px, c*small_px:(c+1)*small_px]
+                inside[r, c] = (cell_mask.mean() > 0.5)
+        return [], small_px, new_width, new_height, num_rows, num_cols, inside
+
+    allowed_order = sorted(allowed_types, key=lambda t: size_mapping[t], reverse=True)
+    # Define fallback: o menor dos tipos permitidos
+    fallback = min(allowed_types, key=lambda t: size_mapping[t])
+    
     small_px = int(round(0.25 / scale))
     if small_px <= 0:
         small_px = 1
@@ -108,6 +157,7 @@ def generate_blocks_greedy(image_pil, scale, threshold=30.0, debug=False):
     num_rows = height // small_px
     new_width = num_cols * small_px
     new_height = num_rows * small_px
+
     image_resized = image_pil.resize((new_width, new_height))
     mask = compute_shape_mask(image_resized, shape_thresh=250)
     inside = np.zeros((num_rows, num_cols), dtype=bool)
@@ -123,69 +173,48 @@ def generate_blocks_greedy(image_pil, scale, threshold=30.0, debug=False):
             cell_colors[r, c] = cell.mean(axis=(0,1))
     merged = np.zeros((num_rows, num_cols), dtype=bool)
     blocks = []
-    # Blocos grandes: 10x10 células → 2.5 m
-    large_size = 10
-    large_threshold = 50.0
-    for r in range(num_rows - large_size + 1):
-        for c in range(num_cols - large_size + 1):
-            if not inside[r:r+large_size, c:c+large_size].all():
-                continue
-            if merged[r:r+large_size, c:c+large_size].any():
-                continue
-            region = cell_colors[r:r+large_size, c:c+large_size]
-            avg = region.mean(axis=(0,1))
-            diff = np.abs(region - avg)
-            if diff.max() <= large_threshold:
-                merged[r:r+large_size, c:c+large_size] = True
-                blocks.append({
-                    "row_start": r,
-                    "col_start": c,
-                    "cell_size": large_size,
-                    "avg_color": avg,
-                    "block_type": "2.5m"
-                })
-    # Blocos médios: 2x2 células → 50 cm
-    med_size = 2
-    med_threshold = 30.0
-    for r in range(num_rows - med_size + 1):
-        for c in range(num_cols - med_size + 1):
-            if not inside[r:r+med_size, c:c+med_size].all():
-                continue
-            if merged[r:r+med_size, c:c+med_size].any():
-                continue
-            region = cell_colors[r:r+med_size, c:c+med_size]
-            avg = region.mean(axis=(0,1))
-            diff = np.abs(region - avg)
-            if diff.max() <= med_threshold:
-                merged[r:r+med_size, c:c+med_size] = True
-                blocks.append({
-                    "row_start": r,
-                    "col_start": c,
-                    "cell_size": med_size,
-                    "avg_color": avg,
-                    "block_type": "50cm"
-                })
-    # Blocos pequenos: 1x1 células → 25 cm
+    
+    # Tenta mesclar para cada tipo permitido (maior primeiro)
+    for t in allowed_order:
+        bs = size_mapping[t]
+        for r in range(num_rows - bs + 1):
+            for c in range(num_cols - bs + 1):
+                if not np.all(inside[r:r+bs, c:c+bs]):
+                    continue
+                if np.any(merged[r:r+bs, c:c+bs]):
+                    continue
+                region = cell_colors[r:r+bs, c:c+bs]
+                avg = region.mean(axis=(0,1))
+                diff = np.abs(region - avg)
+                if diff.max() <= threshold:
+                    merged[r:r+bs, c:c+bs] = True
+                    blocks.append({
+                        "row_start": r,
+                        "col_start": c,
+                        "cell_size": bs,
+                        "avg_color": avg,
+                        "block_type": t
+                    })
+    # Preenche as células restantes com o fallback (se houver)
     for r in range(num_rows):
         for c in range(num_cols):
-            if not inside[r, c]:
-                continue
-            if not merged[r, c]:
+            if inside[r, c] and not merged[r, c]:
                 merged[r, c] = True
-                avg = cell_colors[r, c]
+                bs = size_mapping[fallback]
                 blocks.append({
                     "row_start": r,
                     "col_start": c,
-                    "cell_size": 1,
-                    "avg_color": avg,
-                    "block_type": "25cm"
+                    "cell_size": bs,
+                    "avg_color": cell_colors[r, c],
+                    "block_type": fallback
                 })
     if debug:
         total_cells = num_rows * num_cols
         print(f"Total de células: {total_cells}, Blocos gerados: {len(blocks)}")
-    return blocks, small_px, new_width, new_height, num_rows, num_cols
+    return blocks, small_px, new_width, new_height, num_rows, num_cols, inside
 
-def generate_instructions_from_blocks(blocks, small_px, scale, constant_y):
+def generate_instructions_from_blocks(blocks, small_px, scale, constant_y, use_3d=False):
+    default_thickness = {"25cm": 0.25, "50cm": 0.50, "2.5m": 2.50}
     instructions = []
     for block in blocks:
         r = block["row_start"]
@@ -197,13 +226,17 @@ def generate_instructions_from_blocks(blocks, small_px, scale, constant_y):
         height_px = size * small_px
         center_x = (x0_px + width_px/2) * scale
         center_z = (y0_px + height_px/2) * scale
+        if use_3d:
+            h_val = default_thickness.get(block["block_type"], round(height_px * scale, 2))
+        else:
+            h_val = round(height_px * scale, 2)
         instructions.append({
             "block_type": block["block_type"],
             "x": round(center_x, 2),
             "y": constant_y,
             "z": round(center_z, 2),
             "width": round(width_px * scale, 2),
-            "height": round(height_px * scale, 2)
+            "height": h_val
         })
     return instructions
 
@@ -222,7 +255,6 @@ def generate_schematic_image_from_blocks(image_size, blocks, small_px):
     return schematic
 
 # ===================== Visualizador com Zoom =====================
-
 class ZoomWindow(tk.Toplevel):
     def __init__(self, parent, image):
         super().__init__(parent)
@@ -253,20 +285,17 @@ class ZoomWindow(tk.Toplevel):
         btn_zoom_out.pack(side=tk.LEFT, padx=5)
         btn_reset = ttk.Button(frame_buttons, text="Reset Zoom", command=self.reset_zoom)
         btn_reset.pack(side=tk.LEFT, padx=5)
-        
         self.canvas = tk.Canvas(self, bg="black")
-        self.h_scroll = ttk.Scrollbar(self, orient=tk.HORIZONTAL, command=self.canvas.xview)
-        self.v_scroll = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.canvas.yview)
+        self.h_scroll = ttk.Scrollbar(self, orient="horizontal", command=self.canvas.xview)
+        self.v_scroll = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(xscrollcommand=self.h_scroll.set, yscrollcommand=self.v_scroll.set)
-        self.h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
-        self.v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.h_scroll.pack(side="bottom", fill="x")
+        self.v_scroll.pack(side="right", fill="y")
+        self.canvas.pack(side="left", fill="both", expand=True)
     
     def on_configure(self, event):
-        # Aqui usamos um tamanho máximo fixo para preview na janela de zoom
-        cw = self.canvas.winfo_width()
-        ch = self.canvas.winfo_height()
-        factor = min(cw / self.original_image.width, ch / self.original_image.height)
+        max_size = 400
+        factor = min(max_size / self.original_image.width, max_size / self.original_image.height, 1)
         self.zoom_factor = factor
         self.update_image()
     
@@ -316,13 +345,12 @@ class ZoomWindow(tk.Toplevel):
         self.update_image()
 
 # ===================== Interface Gráfica Principal =====================
-
 class PixelArtSchematicApp(ttk.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.master = master
         self.debug_var = tk.BooleanVar(value=False)
-        self.lang = "pt"  # Idioma padrão
+        self.lang = "pt"
         self.theme_mode = "light"
         self.strings = LANG_STRINGS[self.lang]
         self.master.title(self.strings["title"])
@@ -373,33 +401,70 @@ class PixelArtSchematicApp(ttk.Frame):
         self.label_total.config(text=f"{self.strings['total_blocks']} 0")
         self.tree.heading("type", text=self.strings["block_summary"])
         self.tree.heading("count", text=self.strings["count"])
+        self.lbl_exclude.config(text=self.strings["exclude_blocks"])
+        self.cb_edge_label.config(text=self.strings["edge_pref"])
+        self.cb_interior_label.config(text=self.strings["interior_pref"])
+        self.cb_use_pref_label.config(text=self.strings["use_pref"])
+        self.cb_thickness_label.config(text=self.strings["thickness_3d"])
     
     def create_widgets(self):
-        # Utilizando ttk.Frame para manter os estilos
         frame_controls = ttk.Frame(self)
         frame_controls.pack(pady=10)
-        
         self.btn_load = ttk.Button(frame_controls, text=self.strings["load_image"], command=self.load_image)
         self.btn_load.grid(row=0, column=0, padx=5)
-        
         self.label_z = ttk.Label(frame_controls, text=self.strings["value_z"])
         self.label_z.grid(row=0, column=1, padx=5)
         self.entry_z = ttk.Entry(frame_controls, width=10)
         self.entry_z.insert(0, "")
         self.entry_z.grid(row=0, column=2, padx=5)
-        
         self.label_y = ttk.Label(frame_controls, text=self.strings["value_y"])
         self.label_y.grid(row=0, column=3, padx=5)
         self.entry_y = ttk.Entry(frame_controls, width=10)
         self.entry_y.insert(0, "")
         self.entry_y.grid(row=0, column=4, padx=5)
-        
         self.checkbox_debug = ttk.Checkbutton(frame_controls, text="Debug", variable=self.debug_var)
         self.checkbox_debug.grid(row=0, column=5, padx=5)
-        
         self.btn_generate = ttk.Button(frame_controls, text=self.strings["generate_scheme"], command=self.process_image)
         self.btn_generate.grid(row=0, column=6, padx=5)
         
+        # Opções extras
+        frame_extras = ttk.Frame(self)
+        frame_extras.pack(pady=10, fill="x", padx=10)
+        self.lbl_exclude = ttk.Label(frame_extras, text=self.strings["exclude_blocks"])
+        self.lbl_exclude.grid(row=0, column=0, padx=5)
+        self.include_25_var = tk.BooleanVar(value=True)
+        self.include_50_var = tk.BooleanVar(value=True)
+        self.include_2_5_var = tk.BooleanVar(value=True)
+        self.cb_include_25 = ttk.Checkbutton(frame_extras, text=self.strings["include_25"], variable=self.include_25_var)
+        self.cb_include_25.grid(row=0, column=1, padx=5)
+        self.cb_include_50 = ttk.Checkbutton(frame_extras, text=self.strings["include_50"], variable=self.include_50_var)
+        self.cb_include_50.grid(row=0, column=2, padx=5)
+        self.cb_include_2_5 = ttk.Checkbutton(frame_extras, text=self.strings["include_2_5"], variable=self.include_2_5_var)
+        self.cb_include_2_5.grid(row=0, column=3, padx=5)
+        
+        self.cb_3d_var = tk.BooleanVar(value=False)
+        self.cb_3d = ttk.Checkbutton(frame_extras, text=self.strings["thickness_3d"], variable=self.cb_3d_var)
+        self.cb_3d.grid(row=1, column=0, padx=5, pady=5)
+        
+        self.cb_edge_label = ttk.Label(frame_extras, text=self.strings["edge_pref"])
+        self.cb_edge_label.grid(row=2, column=0, padx=5, pady=5)
+        self.combo_edge = ttk.Combobox(frame_extras, values=["2.5m", "50cm", "25cm"], state="readonly", width=10)
+        self.combo_edge.set("2.5m")
+        self.combo_edge.grid(row=2, column=1, padx=5)
+        
+        self.cb_interior_label = ttk.Label(frame_extras, text=self.strings["interior_pref"])
+        self.cb_interior_label.grid(row=2, column=2, padx=5, pady=5)
+        self.combo_interior = ttk.Combobox(frame_extras, values=["2.5m", "50cm", "25cm"], state="readonly", width=10)
+        self.combo_interior.set("50cm")
+        self.combo_interior.grid(row=2, column=3, padx=5)
+        
+        self.cb_use_pref_var = tk.BooleanVar(value=False)
+        self.cb_use_pref_label = ttk.Label(frame_extras, text=self.strings["use_pref"])
+        self.cb_use_pref_label.grid(row=3, column=0, padx=5, pady=5)
+        self.cb_use_pref = ttk.Checkbutton(frame_extras, variable=self.cb_use_pref_var)
+        self.cb_use_pref.grid(row=3, column=1, padx=5)
+        
+        # Tabela de resumo
         frame_table = ttk.Frame(self)
         frame_table.pack(expand=True, fill="both", padx=10, pady=10)
         self.tree = ttk.Treeview(frame_table, columns=("type", "count"), show="headings")
@@ -460,12 +525,45 @@ class PixelArtSchematicApp(ttk.Frame):
         scale = real_z / img_height
         if self.debug_var.get():
             print(f"Escala: {scale:.4f} m/px (Z = {real_z} m; altura = {img_height} px)")
-        self.blocks, small_px, new_width, new_height, num_rows, num_cols = generate_blocks_greedy(
-            self.image_pil, scale, threshold=30.0, debug=self.debug_var.get())
+        
+        # Define os tipos permitidos com base nos checkbuttons.
+        allowed = []
+        if self.include_25_var.get():
+            allowed.append("25cm")
+        if self.include_50_var.get():
+            allowed.append("50cm")
+        if self.include_2_5_var.get():
+            allowed.append("2.5m")
+        # Se nenhum tipo for permitido, NÃO usamos fallback – retornamos blocos vazios.
+        
+        # Gera os blocos usando somente os tipos permitidos.
+        self.blocks, small_px, new_width, new_height, num_cols, num_rows, inside = generate_blocks_with_allowed(
+            self.image_pil, scale, allowed, threshold=30.0, debug=self.debug_var.get())
         if not self.blocks:
-            messagebox.showinfo(self.strings["warning"], "Nenhum bloco gerado. Verifique a imagem e os parâmetros.")
+            messagebox.showinfo(self.strings["warning"], "Nenhum bloco gerado (possivelmente nenhum tipo permitido).")
             return
-        instructions = generate_instructions_from_blocks(self.blocks, small_px, scale, real_y)
+        
+        # Se o toggle de preferências estiver ativo, aplica as preferências para borda/interior.
+        if self.cb_use_pref_var.get():
+            def is_edge_block(block):
+                r0 = block["row_start"]
+                c0 = block["col_start"]
+                size = block["cell_size"]
+                if r0 == 0 or c0 == 0 or (r0 + size) >= num_rows or (c0 + size) >= num_rows:
+                    return True
+                for i in range(r0, r0 + size):
+                    for j in range(c0, c0 + size):
+                        if not inside[i][j]:
+                            return True
+                return False
+            for block in self.blocks:
+                desired = self.combo_edge.get() if is_edge_block(block) else self.combo_interior.get()
+                # Se o tipo desejado estiver entre os permitidos, usa-o; caso contrário, mantém o tipo atual.
+                if desired in allowed:
+                    block["block_type"] = desired
+        # Se o toggle não estiver ativo, os blocos já estão dentro dos tipos permitidos.
+        
+        instructions = generate_instructions_from_blocks(self.blocks, small_px, scale, real_y, use_3d=self.cb_3d_var.get())
         summary = {}
         for inst in instructions:
             bt = inst["block_type"]
@@ -480,10 +578,18 @@ class PixelArtSchematicApp(ttk.Frame):
         self.schematic = generate_schematic_image_from_blocks((new_width, new_height), self.blocks, small_px)
         self.show_preview()
     
+    def include_block_type(self, block_type):
+        if block_type == "25cm":
+            return self.include_25_var.get()
+        elif block_type == "50cm":
+            return self.include_50_var.get()
+        elif block_type == "2.5m":
+            return self.include_2_5_var.get()
+        return False
+    
     def show_preview(self):
         preview_window = tk.Toplevel(self)
         preview_window.title(self.strings["preview_title"])
-        # Redimensiona a imagem para caber em um tamanho máximo fixo (400x400)
         preview_img = self.schematic.copy()
         preview_img.thumbnail((400, 400))
         preview_photo = ImageTk.PhotoImage(preview_img)
