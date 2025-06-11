@@ -548,7 +548,7 @@ class PixelArtSchematicApp(ttk.Frame):
         # Se nenhum tipo for permitido, NÃO usamos fallback – retornamos blocos vazios.
         
         # Gera os blocos usando somente os tipos permitidos.
-        self.blocks, small_px, new_width, new_height, num_cols, num_rows, inside = generate_blocks_with_allowed(
+        self.blocks, small_px, new_width, new_height, num_rows, num_cols, inside = generate_blocks_with_allowed(
             self.image_pil, scale, allowed, threshold=30.0, debug=self.debug_var.get())
         if not self.blocks:
             messagebox.showinfo(self.strings["warning"], "Nenhum bloco gerado (possivelmente nenhum tipo permitido).")
@@ -560,7 +560,7 @@ class PixelArtSchematicApp(ttk.Frame):
                 r0 = block["row_start"]
                 c0 = block["col_start"]
                 size = block["cell_size"]
-                if r0 == 0 or c0 == 0 or (r0 + size) >= num_rows or (c0 + size) >= num_rows:
+                if r0 == 0 or c0 == 0 or (r0 + size) >= num_rows or (c0 + size) >= num_cols:
                     return True
                 for i in range(r0, r0 + size):
                     for j in range(c0, c0 + size):
