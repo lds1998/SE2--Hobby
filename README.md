@@ -27,3 +27,7 @@ Just a hobby :P
 ![Input](https://github.com/lds1998/SE2--Hobby/blob/main/Screenshots/test.jpg?raw=true)
 ![Image to schematic convertion](https://github.com/lds1998/SE2--Hobby/blob/main/Screenshots/Example01.png?raw=true)
 ![Output](https://github.com/lds1998/SE2--Hobby/blob/main/Screenshots/Output.png?raw=true)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
