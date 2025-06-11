@@ -214,6 +214,17 @@ def generate_blocks_with_allowed(image_pil, scale, allowed_types, threshold=30.0
     return blocks, small_px, new_width, new_height, num_rows, num_cols, inside
 
 def generate_instructions_from_blocks(blocks, small_px, scale, constant_y, use_3d=False):
+    """
+    Gera instruções de posicionamento a partir dos blocos detectados.
+    blocks: lista de dicionários de blocos.
+    small_px: tamanho da menor célula em pixels.
+    scale: fator de conversão de pixels para metros.
+    constant_y: valor Y aplicado a todas as instruções.
+    use_3d: considera espessuras padrão ao calcular a altura.
+
+    Retorna uma lista de dicionários com as chaves
+    'block_type', 'x', 'y', 'z', 'width' e 'height'.
+    """
     default_thickness = {"25cm": 0.25, "50cm": 0.50, "2.5m": 2.50}
     instructions = []
     for block in blocks:
