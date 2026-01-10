@@ -1,11 +1,8 @@
-import tkinter as tk
-from .ui import PixelArtSchematicApp
+from .ui import SE2App
 
 def main():
-    root = tk.Tk()
-    app = PixelArtSchematicApp(root)
-    app.pack(expand=True, fill="both")
-    root.mainloop()
+    app = SE2App()
+    app.mainloop()
 
 if __name__ == "__main__":
     main()
